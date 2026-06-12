@@ -1,0 +1,17 @@
+[package]
+name = "fetcher"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+clap = { version = "4.6.0", features = ["derive"]}
+flate2 = "1.1"
+futures = "0.3.32"
+reqwest = { version = "0.13.2", default-features = false, features = ["blocking", "gzip", "rustls", "stream"] }
+serde = { version = "1.0.228", features = ["derive"]}
+tar = "0.4"
+tokio = {version = "1.51.0", features = ["full"]}
+toml = "1.1.2"
+xz2 = "0.1"
+zstd = { version = "0.13", default-features = false }
+indicatif = "0.17"
