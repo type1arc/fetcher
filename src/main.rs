@@ -52,6 +52,11 @@ enum Commands {
     },
     /// Remove cached archives
     Clean,
+    /// Unfetch (remove) an installed package
+    Unfetch {
+        /// Package name to unfetch
+        pkg: Option<String>,
+    },
 }
 
 fn home_bin() -> String {
@@ -74,6 +79,70 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     match &cli.command {
         Commands::Clean => {
             download::clean_cache().unwrap_or_else(|e| eprintln!("error: {e}"));
+            return Ok(());
+        }
+        Commands::Unfetch { pkg } => {
+            let client = build_client()?;
+            let bin = home_bin();
+
+            match pkg {
+                Some(name) => {
+                    let mut lockfile = manifest::read_lockfile().unwrap_or(Lockfile {
+                        version: 1,
+                        deps: HashMap::new(),
+                    });
+                    if lockfile.deps.contains_key(name) {
+                        match download::uninstall_pkg(&client, name, &bin, &mut lockfile).await {
+                            Ok(n) => {
+                                println!("✓ removed {} file(s) for {}", n, name);
+                                if let Err(e) = manifest::write_lockfile(&lockfile) {
+                                    eprintln!("error writing lockfile: {e}");
+                                }
+                            }
+                            Err(e) => eprintln!("error: {e}"),
+                        }
+                    } else {
+                        match download::uninstall_pkg_by_name(name, &bin) {
+                            Ok(n) => {
+                                if n == 0 {
+                                    eprintln!("no files found for '{}'", name);
+                                } else {
+                                    println!("✓ removed {} file(s) for {}", n, name);
+                                }
+                            }
+                            Err(e) => eprintln!("error: {e}"),
+                        }
+                    }
+                }
+                None => {
+                    let manifest = match manifest::load_manifest() {
+                        Ok(m) => m,
+                        Err(e) => { eprintln!("error: {e}"); return Ok(()); }
+                    };
+                    let mut lockfile = manifest::read_lockfile().unwrap_or(Lockfile {
+                        version: 1,
+                        deps: HashMap::new(),
+                    });
+                    let mut total: u32 = 0;
+                    for name in manifest.deps.keys() {
+                        if lockfile.deps.contains_key(name) {
+                            match download::uninstall_pkg(&client, name, &bin, &mut lockfile).await {
+                                Ok(n) => { total += n; }
+                                Err(e) => eprintln!("error unfetching {}: {}", name, e),
+                            }
+                        } else {
+                            match download::uninstall_pkg_by_name(name, &bin) {
+                                Ok(n) => { total += n; }
+                                Err(e) => eprintln!("error unfetching {}: {}", name, e),
+                            }
+                        }
+                    }
+                    if let Err(e) = manifest::write_lockfile(&lockfile) {
+                        eprintln!("error writing lockfile: {e}");
+                    }
+                    println!("✓ removed {} file(s) total", total);
+                }
+            }
             return Ok(());
         }
         Commands::Source { src, version, build } => {

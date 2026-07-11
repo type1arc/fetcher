@@ -270,6 +270,42 @@ pub async fn build_from_source(
     // resolve source root (handle GitHub's nested top-level dir)
     let src_root = source_root(&build_dir, name, version);
 
+    // populate Git submodules if .gitmodules exists
+    let gitmodules = format!("{}/.gitmodules", src_root);
+    if Path::new(&gitmodules).exists() {
+        println!("→ populating git submodules...");
+        if let Ok(content) = std::fs::read_to_string(&gitmodules) {
+            let mut sub_path = String::new();
+            for line in content.lines() {
+                let line = line.trim();
+                if let Some(rest) = line.strip_prefix("[submodule \"") {
+                    sub_path = rest.trim_end_matches("\"]").to_string();
+                } else if let Some(url_val) = line.strip_prefix("url = ") {
+                    if sub_path.is_empty() { continue; }
+                    let target = format!("{}/{}", src_root, sub_path);
+                    let empty = !Path::new(&target).exists()
+                        || std::fs::read_dir(&target).map(|mut d| d.next().is_none()).unwrap_or(true);
+                    if empty {
+                        println!("  → cloning {} -> {}", url_val, sub_path);
+                        let _ = std::fs::remove_dir_all(&target);
+                        let status = std::process::Command::new("git")
+                            .arg("clone").arg("--depth").arg("1")
+                            .arg(url_val).arg(&target)
+                            .stdout(std::process::Stdio::inherit())
+                            .stderr(std::process::Stdio::inherit())
+                            .status();
+                        if let Ok(s) = status {
+                            if !s.success() {
+                                eprintln!("  warning: failed to clone submodule {}", sub_path);
+                            }
+                        }
+                    }
+                    sub_path.clear();
+                }
+            }
+        }
+    }
+
     // auto-detect build system if no explicit command given
     let cmd = if build_cmd.is_empty() {
         match detect_build_system(&build_dir, name) {
@@ -324,6 +360,95 @@ pub async fn git_clone(name: &str, version: &str, git_url: &str, rev: Option<&st
     if !cmd.status()?.success() { return Err(format!("git clone failed for {name}").into()); }
     println!("✓ cloned {}@{} -> {:?}", name, version, cache_dir);
     Ok(dest)
+}
+
+pub async fn uninstall_pkg(
+    client: &Client,
+    name: &str,
+    bin_dir: &str,
+    lockfile: &mut crate::manifest::Lockfile,
+) -> Result<u32, Box<dyn std::error::Error + Send + Sync>> {
+    use crate::manifest::LockedDep;
+
+    let locked: LockedDep = match lockfile.deps.get(name) {
+        Some(l) => l.clone(),
+        None => return Err(format!("'{}' not found in lockfile", name).into()),
+    };
+
+    let url = locked.download_url.clone();
+    let version = locked.version.clone();
+
+    println!("→ downloading {}@{} to list installed files...", name, version);
+    let response = client.get(&url).header("user-agent", "fetcher").send().await?;
+    if !response.status().is_success() {
+        return Err(format!("HTTP {} fetching {}", response.status(), url).into());
+    }
+    let bytes = response.bytes().await?;
+
+    let cache = cache_dir();
+    fs::create_dir_all(&cache)?;
+    let ext = if url.ends_with(".tar.gz") { "tar.gz" }
+              else { url.rsplit_once('.').map(|(_, e)| e).unwrap_or("pkg") };
+    let archive_path = format!("{}/{}-{}.{}", cache, name, version, ext);
+    fs::write(&archive_path, &bytes)?;
+
+    let files = crate::extract::list_archive_files(&archive_path, name, &version)?;
+    let _ = fs::remove_file(&archive_path);
+
+    let bin = Path::new(bin_dir);
+    let mut removed: u32 = 0;
+    for file in &files {
+        let target = bin.join(file);
+        if target.exists() {
+            fs::remove_file(&target)?;
+            removed += 1;
+        }
+    }
+
+    let mut dirs_to_check: Vec<_> = files.iter()
+        .filter_map(|f| bin.join(f).parent().map(|p| p.to_path_buf()))
+        .filter(|p| p != bin)
+        .collect();
+    dirs_to_check.sort();
+    dirs_to_check.dedup();
+    dirs_to_check.reverse();
+    for dir in dirs_to_check {
+        let _ = fs::remove_dir(&dir);
+    }
+
+    lockfile.deps.remove(name);
+    Ok(removed)
+}
+
+pub fn uninstall_pkg_by_name(name: &str, bin_dir: &str) -> Result<u32, Box<dyn std::error::Error + Send + Sync>> {
+    let root = Path::new(bin_dir);
+    if !root.exists() {
+        return Err(format!("install directory {} does not exist", bin_dir).into());
+    }
+
+    let mut removed: u32 = 0;
+    let entries: Vec<_> = fs::read_dir(root)?.flatten().collect();
+
+    for entry in &entries {
+        let path = entry.path();
+        let fname = path.file_name().unwrap_or_default().to_string_lossy();
+
+        let matches = fname == name
+            || fname.starts_with(&format!("{}-", name))
+            || fname.starts_with(&format!("{}.", name));
+
+        if !matches { continue; }
+
+        if path.is_dir() {
+            fs::remove_dir_all(&path)?;
+            removed += 1;
+        } else if path.is_file() {
+            fs::remove_file(&path)?;
+            removed += 1;
+        }
+    }
+
+    Ok(removed)
 }
 
 pub fn clean_cache() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {

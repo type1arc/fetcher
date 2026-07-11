@@ -119,7 +119,7 @@ pub struct Lockfile {
     pub deps: HashMap<String, LockedDep>,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct LockedDep {
     pub version: String,
     pub download_url: String,

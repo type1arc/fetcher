@@ -56,6 +56,83 @@ fn extract_zip(data: &[u8], dest: &Path) -> Result<(), Box<dyn std::error::Error
     Ok(())
 }
 
+pub fn list_archive_files(path: &str, _name: &str, _version: &str) -> Result<Vec<String>, Box<dyn std::error::Error + Send + Sync>> {
+    let data = fs::read(path)?;
+    let mut files = Vec::new();
+
+    if path.ends_with(".pkg.tar.zst") || path.ends_with(".zst") {
+        let tar_bytes = zstd::stream::decode_all(&data[..])?;
+        let mut archive = tar::Archive::new(&tar_bytes[..]);
+        for entry in archive.entries()? {
+            let entry = entry?;
+            let p = entry.path()?.to_string_lossy().to_string();
+            if !p.ends_with('/') { files.push(p); }
+        }
+    } else if path.ends_with(".apk") {
+        let mut tar_bytes = Vec::new();
+        GzDecoder::new(&data[..]).read_to_end(&mut tar_bytes)?;
+        let mut archive = tar::Archive::new(&tar_bytes[..]);
+        for entry in archive.entries()? {
+            let entry = entry?;
+            let p = entry.path()?.to_string_lossy().to_string();
+            if !p.ends_with('/') { files.push(p); }
+        }
+    } else if path.ends_with(".deb") {
+        let mut pos = 8;
+        while pos + 60 <= data.len() {
+            let header = &data[pos..pos+60];
+            pos += 60;
+            let member_name = String::from_utf8_lossy(&header[..16]).trim().to_string();
+            let size_str = String::from_utf8_lossy(&header[48..58]).trim().to_string();
+            let size: usize = size_str.parse().unwrap_or(0);
+            let padded = size + (size % 2);
+            if pos + padded > data.len() { break; }
+            let content = &data[pos..pos+size];
+            pos += padded;
+
+            if member_name.starts_with("data.tar.") {
+                let tar_bytes = if member_name.ends_with(".xz") {
+                    let mut buf = Vec::new();
+                    xz2::read::XzDecoder::new(content).read_to_end(&mut buf)?;
+                    buf
+                } else if member_name.ends_with(".gz") {
+                    let mut buf = Vec::new();
+                    GzDecoder::new(content).read_to_end(&mut buf)?;
+                    buf
+                } else {
+                    continue;
+                };
+                let mut archive = tar::Archive::new(&tar_bytes[..]);
+                for entry in archive.entries()? {
+                    let entry = entry?;
+                    let p = entry.path()?.to_string_lossy().to_string();
+                    if !p.ends_with('/') { files.push(p); }
+                }
+                break;
+            }
+        }
+    } else if path.ends_with(".zip") {
+        let mut archive = zip::ZipArchive::new(std::io::Cursor::new(&data))?;
+        for i in 0..archive.len() {
+            let entry = archive.by_index(i)?;
+            if !entry.is_dir() {
+                files.push(entry.mangled_name().to_string_lossy().to_string());
+            }
+        }
+    } else if path.ends_with(".tar.gz") || path.ends_with(".tgz") {
+        let mut tar_bytes = Vec::new();
+        GzDecoder::new(&data[..]).read_to_end(&mut tar_bytes)?;
+        let mut archive = tar::Archive::new(&tar_bytes[..]);
+        for entry in archive.entries()? {
+            let entry = entry?;
+            let p = entry.path()?.to_string_lossy().to_string();
+            if !p.ends_with('/') { files.push(p); }
+        }
+    }
+
+    Ok(files)
+}
+
 fn extract_deb(data: &[u8], dest: &Path) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let mut pos = 0;
     let magic = b"!<arch>\n";
