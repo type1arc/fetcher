@@ -24,6 +24,7 @@ fetcher fetch [PKG] [OPTIONS]
 fetcher fetch              # manifest mode (reads package.toml)
 fetcher source <src>       # download source and build (auto-detect or --build)
 fetcher clean              # remove cached .fetcher/ directory
+fetcher unfetch [PKG]      # unfetching (uninstalling) a package
 ```
 
 ### Global options
@@ -278,6 +279,12 @@ fetcher clean
 ```
 
 Removes the `.fetcher/` directory (download cache and build artifacts).
+
+# Uninstall Package
+```bash
+fetcher unfetch [PKG]
+
+```
 
 ## Notes
 
