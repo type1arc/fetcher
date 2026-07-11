@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="fetcher.png" alt="fetcher" />
+  <img src="assets/fetcher.png" alt="fetcher" />
 </p>
 
 # fetcher
