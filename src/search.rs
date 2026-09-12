@@ -1,11 +1,21 @@
 use crate::index::{fetch_apt_index, fetch_pacman_index, fetch_apk_index};
-use crate::repo::{AptRepo, PacmanRepo, ApkRepo, FoundPkg, read_apt_sources, read_pacman_repos, read_apk_repos};
+use crate::repo::{AptRepo, PacmanRepo, ApkRepo, FoundPkg};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use reqwest::Client;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
+
+pub const MSG_WIDTH: usize = 60;
+
+pub fn pad_msg(msg: &str) -> String {
+    if msg.len() >= MSG_WIDTH {
+        msg[..MSG_WIDTH].to_string()
+    } else {
+        format!("{:<width$}", msg, width = MSG_WIDTH)
+    }
+}
 
 fn animate(pb: &ProgressBar) -> tokio::task::JoinHandle<()> {
     let pb = pb.clone();
@@ -21,7 +31,7 @@ pub async fn search_system_repos(client: &Client, name: &str) -> Vec<FoundPkg> {
     println!("searching for {} in system repos...", name);
     let mp = MultiProgress::new();
     let bar_sty = ProgressStyle::default_bar()
-        .template("[{bar:20}] {spinner:.green} {msg}")
+        .template("{spinner:.green} {wide_bar:.green} {msg}")
         .unwrap()
         .progress_chars("##-");
 
@@ -31,35 +41,39 @@ pub async fn search_system_repos(client: &Client, name: &str) -> Vec<FoundPkg> {
 
     // ── Read all repo configs & create bars upfront ──
 
-    let apt_repos = read_apt_sources();
+    if let Some(p) = crate::config::FetcherConfig::path() {
+        println!("using repos from {}", p.display());
+    }
+    let (apt_repos, pacman_repos, apk_repos) = crate::config::repo_lists();
+
     let mut apt_work: Vec<(ProgressBar, AptRepo)> = Vec::new();
     for repo in apt_repos {
         if repo.components.is_empty() { continue; }
         let pb = mp.add(ProgressBar::new(repo.components.len() as u64));
         pb.set_style(bar_sty.clone());
-        pb.set_message(format!("apt: {}/{}", repo.uri, repo.suite));
+        pb.set_message(pad_msg(&format!("apt: {}/{}", repo.uri, repo.suite)));
         apt_work.push((pb, repo));
     }
     let apt_work = Arc::new(apt_work);
 
     let mut pacman_sections: HashMap<String, Vec<PacmanRepo>> = HashMap::new();
-    for repo in read_pacman_repos() {
+    for repo in pacman_repos {
         pacman_sections.entry(repo.name.clone()).or_default().push(repo);
     }
     let mut pacman_work: Vec<(ProgressBar, String, Vec<PacmanRepo>)> = Vec::new();
     for (section, mirrors) in pacman_sections {
         let pb = mp.add(ProgressBar::new(mirrors.len() as u64));
         pb.set_style(bar_sty.clone());
-        pb.set_message(format!("pacman: {}", section));
+        pb.set_message(pad_msg(&format!("pacman: {}", section)));
         pacman_work.push((pb, section, mirrors));
     }
     let pacman_work = Arc::new(pacman_work);
 
     let mut apk_work: Vec<(ProgressBar, ApkRepo)> = Vec::new();
-    for repo in read_apk_repos() {
+    for repo in apk_repos {
         let pb = mp.add(ProgressBar::new(1));
         pb.set_style(bar_sty.clone());
-        pb.set_message(format!("apk: {}", repo.uri));
+        pb.set_message(pad_msg(&format!("apk: {}", repo.uri)));
         apk_work.push((pb, repo));
     }
     let apk_work = Arc::new(apk_work);
@@ -86,11 +100,11 @@ pub async fn search_system_repos(client: &Client, name: &str) -> Vec<FoundPkg> {
                     }
                 }
                 anim.abort();
-                pb.finish_with_message(format!(
+                pb.finish_with_message(pad_msg(&format!(
                     "✓ {}  apt: {}/{}",
                     if found.iter().any(|f| f.repo.starts_with("apt:")) { "●" } else { "○" },
                     repo.uri, repo.suite,
-                ));
+                )));
             }
             found
         }
@@ -140,9 +154,9 @@ pub async fn search_system_repos(client: &Client, name: &str) -> Vec<FoundPkg> {
                 }
                 anim.abort();
                 if section_found {
-                    pb.finish_with_message(format!("✓ ● found in pacman: {}", section));
+                    pb.finish_with_message(pad_msg(&format!("✓ ● found in pacman: {}", section)));
                 } else {
-                    pb.finish_with_message(format!("✓ ○ pacman: {} (no match)", section));
+                    pb.finish_with_message(pad_msg(&format!("✓ ○ pacman: {} (no match)", section)));
                 }
             }
             found
@@ -169,11 +183,11 @@ pub async fn search_system_repos(client: &Client, name: &str) -> Vec<FoundPkg> {
                     }
                 }
                 anim.abort();
-                pb.finish_with_message(format!(
+                pb.finish_with_message(pad_msg(&format!(
                     "✓ {}  apk: {}",
                     if found.iter().any(|f| f.repo.starts_with("apk:")) { "●" } else { "○" },
                     repo.uri,
-                ));
+                )));
             }
             found
         }

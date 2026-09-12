@@ -6,6 +6,7 @@ mod search;
 mod download;
 mod extract;
 mod postinstall;
+mod config;
 
 use clap::{Parser, Subcommand};
 use manifest::{DepSpec, LockedDep, Lockfile, SourceOverride};

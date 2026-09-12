@@ -54,6 +54,33 @@ fetcher fetch ripgrep --from-source --github BurntSushi/ripgrep
 
 Placeholders `{name}` and `{version}` are substituted automatically in URLs.
 
+### Repository config
+
+`fetcher.conf` (TOML) lists the repositories fetcher scans when looking for a package.
+When present it overrides system auto-detection; set `include_system = true` to also
+scan system repos. Lookup order (first match wins):
+
+1. `$FETCHER_CONFIG`
+2. `./fetcher.conf`
+3. `$XDG_CONFIG_HOME/fetcher/fetcher.conf` (default `~/.config/fetcher/fetcher.conf`)
+4. `/etc/fetcher.conf`
+
+```toml
+include_system = true
+
+[[apt]]
+uri = "https://deb.debian.org/debian"
+suite = "bookworm"
+components = ["main", "contrib", "non-free"]
+
+[[pacman]]
+name = "core"
+server = "https://geo.mirror.pkgbuild.com/$repo/os/$arch"
+
+[[apk]]
+uri = "https://dl-cdn.alpinelinux.org/alpine/v3.20/main"
+```
+
 ### Source command
 
 ```bash

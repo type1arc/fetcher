@@ -1,6 +1,7 @@
 use crate::extract::extract_pkg;
 use crate::postinstall::{self, make_executable, strip_binaries};
 use crate::repo::FoundPkg;
+use crate::search::pad_msg;
 use futures::StreamExt;
 use indicatif::{ProgressBar, ProgressStyle};
 use reqwest::Client;
@@ -23,7 +24,7 @@ pub async fn download_pkg(
     expected_sha256: Option<&str>,
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
     let dl_sty = ProgressStyle::default_bar()
-        .template("[{bar:20}] {bytes}/{total_bytes} {msg}")
+        .template("{spinner:.green} {wide_bar:.green} {msg}")
         .unwrap()
         .progress_chars("##-");
     println!("→ downloading {} from {}", pkg.name, pkg.repo);
@@ -35,7 +36,7 @@ pub async fn download_pkg(
     let total = response.content_length().unwrap_or(0);
     let pb = ProgressBar::new(total);
     pb.set_style(dl_sty);
-    pb.set_message(format!("downloading {}", pkg.name));
+    pb.set_message(pad_msg(&format!("downloading {}  0/{}", pkg.name, total)));
 
     let mut bytes = Vec::new();
     let mut stream = response.bytes_stream();
@@ -43,9 +44,10 @@ pub async fn download_pkg(
         let chunk = chunk?;
         bytes.extend_from_slice(&chunk);
         pb.inc(chunk.len() as u64);
+        pb.set_message(pad_msg(&format!("downloading {}  {}/{}", pkg.name, bytes.len(), total)));
     }
 
-    pb.finish_with_message(format!("✓ downloaded {} ({} bytes)", pkg.name, bytes.len()));
+    pb.finish_with_message(pad_msg(&format!("✓ downloaded {} ({} bytes)", pkg.name, bytes.len())));
 
     let cache = cache_dir();
     fs::create_dir_all(&cache)?;
@@ -86,7 +88,7 @@ pub async fn fetch_pkg(
     expected_sha256: Option<&str>,
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
     let dl_sty = ProgressStyle::default_bar()
-        .template("[{bar:20}] {bytes}/{total_bytes} {msg}")
+        .template("{spinner:.green} {wide_bar:.green} {msg}")
         .unwrap()
         .progress_chars("##-");
 
@@ -99,7 +101,7 @@ pub async fn fetch_pkg(
     let total = response.content_length().unwrap_or(0);
     let pb = ProgressBar::new(total);
     pb.set_style(dl_sty);
-    pb.set_message(format!("downloading {}@{}", name, version));
+    pb.set_message(pad_msg(&format!("downloading {}@{}  0/{}", name, version, total)));
 
     let mut bytes = Vec::new();
     let mut stream = response.bytes_stream();
@@ -107,8 +109,9 @@ pub async fn fetch_pkg(
         let chunk = chunk?;
         bytes.extend_from_slice(&chunk);
         pb.inc(chunk.len() as u64);
+        pb.set_message(pad_msg(&format!("downloading {}@{}  {}/{}", name, version, bytes.len(), total)));
     }
-    pb.finish_with_message(format!("✓ downloaded {}@{} ({} bytes)", name, version, bytes.len()));
+    pb.finish_with_message(pad_msg(&format!("✓ downloaded {}@{} ({} bytes)", name, version, bytes.len())));
 
     let cache = cache_dir();
     fs::create_dir_all(&cache)?;
@@ -225,7 +228,7 @@ pub async fn build_from_source(
     build_cmd: &str,
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
     let dl_sty = ProgressStyle::default_bar()
-        .template("[{bar:20}] {bytes}/{total_bytes} {msg}")
+        .template("{spinner:.green} {wide_bar:.green} {msg}")
         .unwrap()
         .progress_chars("##-");
 
@@ -238,7 +241,7 @@ pub async fn build_from_source(
     let total = response.content_length().unwrap_or(0);
     let pb = ProgressBar::new(total);
     pb.set_style(dl_sty);
-    pb.set_message(format!("downloading source {}", name));
+    pb.set_message(pad_msg(&format!("downloading source {}  0/{}", name, total)));
 
     let mut bytes = Vec::new();
     let mut stream = response.bytes_stream();
@@ -246,8 +249,9 @@ pub async fn build_from_source(
         let chunk = chunk?;
         bytes.extend_from_slice(&chunk);
         pb.inc(chunk.len() as u64);
+        pb.set_message(pad_msg(&format!("downloading source {}  {}/{}", name, bytes.len(), total)));
     }
-    pb.finish_with_message(format!("✓ downloaded source {} ({} bytes)", name, bytes.len()));
+    pb.finish_with_message(pad_msg(&format!("✓ downloaded source {} ({} bytes)", name, bytes.len())));
 
     let cache = cache_dir();
     fs::create_dir_all(&cache)?;

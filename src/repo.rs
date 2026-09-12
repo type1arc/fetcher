@@ -1,16 +1,20 @@
+use serde::Deserialize;
 use std::fs;
 
+#[derive(Debug, Clone, Deserialize)]
 pub struct AptRepo {
     pub uri: String,
     pub suite: String,
     pub components: Vec<String>,
 }
 
+#[derive(Debug, Clone, Deserialize)]
 pub struct PacmanRepo {
     pub name: String,
     pub server: String,
 }
 
+#[derive(Debug, Clone, Deserialize)]
 pub struct ApkRepo {
     pub uri: String,
 }

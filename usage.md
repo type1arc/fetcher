@@ -50,11 +50,44 @@ When a version is omitted, `latest` is used.
 
 ### From system repositories
 
-Searches APT, Pacman, and Alpine APK repositories, downloads the first match,
-and extracts to `~/.local/bin/`:
+Searches the repos listed in `fetcher.conf` (or auto-detected system repos: APT
+`sources.list`, Pacman `pacman.conf`, Alpine `apk/repositories`), downloads the
+first match, and extracts to `~/.local/bin/`:
 
 ```bash
 fetcher fetch neovim
+```
+
+### Repository config (`fetcher.conf`)
+
+`fetcher.conf` (TOML) lists all repositories fetcher scans for the target package.
+When it exists it takes precedence over system auto-detection.
+
+| Option | Description |
+|--------|-------------|
+| `include_system` | `true` = also scan system-configured repos; `false` = only the repos below (default when the file exists) |
+| `apt` | Array of `{ uri, suite, components = [...] }` |
+| `pacman` | Array of `{ name, server }` (server supports `$repo`/`$arch`) |
+| `apk` | Array of `{ uri }` |
+
+Lookup order (first match wins): `$FETCHER_CONFIG` → `./fetcher.conf` →
+`$XDG_CONFIG_HOME/fetcher/fetcher.conf` (`~/.config/fetcher/fetcher.conf`) →
+`/etc/fetcher.conf`.
+
+```toml
+include_system = true
+
+[[apt]]
+uri = "https://deb.debian.org/debian"
+suite = "bookworm"
+components = ["main", "contrib"]
+
+[[pacman]]
+name = "core"
+server = "https://geo.mirror.pkgbuild.com/$repo/os/$arch"
+
+[[apk]]
+uri = "https://dl-cdn.alpinelinux.org/alpine/v3.20/main"
 ```
 
 After searching, a status line shows how many matches were found:

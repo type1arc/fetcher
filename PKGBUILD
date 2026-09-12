@@ -1,9 +1,9 @@
 # Maintainer: type1arc <type1arc@github>
 
-pkgname=fetcher-cli
+pkgname=fetchy
 pkgver=0.1.0
 pkgrel=1
-pkgdesc="A configurable package fetcher written in Rust"
+pkgdesc="A configurable package manager written in Rust"
 arch=('x86_64' 'aarch64')
 url="https://github.com/type1arc/fetcher"
 license=('Apache-2.0')
