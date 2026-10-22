@@ -1,21 +1,12 @@
 use crate::index::{fetch_apt_index, fetch_pacman_index, fetch_apk_index};
 use crate::repo::{AptRepo, PacmanRepo, ApkRepo, FoundPkg};
-use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
+use crate::ui::{bar_style, pad_msg};
+use indicatif::{MultiProgress, ProgressBar};
 use reqwest::Client;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
-
-pub const MSG_WIDTH: usize = 60;
-
-pub fn pad_msg(msg: &str) -> String {
-    if msg.len() >= MSG_WIDTH {
-        msg[..MSG_WIDTH].to_string()
-    } else {
-        format!("{:<width$}", msg, width = MSG_WIDTH)
-    }
-}
 
 fn animate(pb: &ProgressBar) -> tokio::task::JoinHandle<()> {
     let pb = pb.clone();
@@ -30,10 +21,7 @@ fn animate(pb: &ProgressBar) -> tokio::task::JoinHandle<()> {
 pub async fn search_system_repos(client: &Client, name: &str) -> Vec<FoundPkg> {
     println!("searching for {} in system repos...", name);
     let mp = MultiProgress::new();
-    let bar_sty = ProgressStyle::default_bar()
-        .template("{spinner:.green} {wide_bar:.green} {msg}")
-        .unwrap()
-        .progress_chars("##-");
+    let bar_sty = bar_style();
 
     let name = Arc::new(name.to_string());
     let client = Arc::new(client.clone());

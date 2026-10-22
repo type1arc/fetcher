@@ -1,9 +1,9 @@
 use crate::extract::extract_pkg;
 use crate::postinstall::{self, make_executable, strip_binaries};
 use crate::repo::FoundPkg;
-use crate::search::pad_msg;
+use crate::ui::{bar_style, pad_msg, stats_line};
 use futures::StreamExt;
-use indicatif::{ProgressBar, ProgressStyle};
+use indicatif::{HumanBytes, ProgressBar};
 use reqwest::Client;
 use std::fs;
 use std::path::Path;
@@ -23,20 +23,20 @@ pub async fn download_pkg(
     pkg: &FoundPkg,
     expected_sha256: Option<&str>,
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
-    let dl_sty = ProgressStyle::default_bar()
-        .template("{spinner:.green} {wide_bar:.green} {msg}")
-        .unwrap()
-        .progress_chars("##-");
+    let dl_sty = bar_style();
     println!("→ downloading {} from {}", pkg.name, pkg.repo);
     let response = client.get(&pkg.download_url).header("user-agent", "fetcher").send().await?;
     if !response.status().is_success() {
         return Err(format!("HTTP {} downloading {}", response.status(), pkg.download_url).into());
     }
 
-    let total = response.content_length().unwrap_or(0);
-    let pb = ProgressBar::new(total);
+    let total = response.content_length();
+    let pb = match total {
+        Some(t) => ProgressBar::new(t),
+        None => ProgressBar::no_length(),
+    };
     pb.set_style(dl_sty);
-    pb.set_message(pad_msg(&format!("downloading {}  0/{}", pkg.name, total)));
+    pb.set_message(pad_msg(&stats_line(0, total, 0.0)));
 
     let mut bytes = Vec::new();
     let mut stream = response.bytes_stream();
@@ -44,10 +44,15 @@ pub async fn download_pkg(
         let chunk = chunk?;
         bytes.extend_from_slice(&chunk);
         pb.inc(chunk.len() as u64);
-        pb.set_message(pad_msg(&format!("downloading {}  {}/{}", pkg.name, bytes.len(), total)));
+        pb.set_message(pad_msg(&stats_line(pb.position(), total, pb.per_sec())));
     }
 
-    pb.finish_with_message(pad_msg(&format!("✓ downloaded {} ({} bytes)", pkg.name, bytes.len())));
+    pb.finish_with_message(pad_msg(&format!(
+        "✓ downloaded {} ({} in {:.1}s)",
+        pkg.name,
+        HumanBytes(bytes.len() as u64),
+        pb.elapsed().as_secs_f64()
+    )));
 
     let cache = cache_dir();
     fs::create_dir_all(&cache)?;
@@ -87,10 +92,7 @@ pub async fn fetch_pkg(
     url: &str,
     expected_sha256: Option<&str>,
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
-    let dl_sty = ProgressStyle::default_bar()
-        .template("{spinner:.green} {wide_bar:.green} {msg}")
-        .unwrap()
-        .progress_chars("##-");
+    let dl_sty = bar_style();
 
     println!("→ downloading {}@{} from {}", name, version, url);
     let response = client.get(url).header("user-agent", "fetcher").send().await?;
@@ -98,10 +100,13 @@ pub async fn fetch_pkg(
         return Err(format!("failed to fetch {}@{} ({}): HTTP {}", name, version, url, response.status()).into());
     }
 
-    let total = response.content_length().unwrap_or(0);
-    let pb = ProgressBar::new(total);
+    let total = response.content_length();
+    let pb = match total {
+        Some(t) => ProgressBar::new(t),
+        None => ProgressBar::no_length(),
+    };
     pb.set_style(dl_sty);
-    pb.set_message(pad_msg(&format!("downloading {}@{}  0/{}", name, version, total)));
+    pb.set_message(pad_msg(&stats_line(0, total, 0.0)));
 
     let mut bytes = Vec::new();
     let mut stream = response.bytes_stream();
@@ -109,9 +114,15 @@ pub async fn fetch_pkg(
         let chunk = chunk?;
         bytes.extend_from_slice(&chunk);
         pb.inc(chunk.len() as u64);
-        pb.set_message(pad_msg(&format!("downloading {}@{}  {}/{}", name, version, bytes.len(), total)));
+        pb.set_message(pad_msg(&stats_line(pb.position(), total, pb.per_sec())));
     }
-    pb.finish_with_message(pad_msg(&format!("✓ downloaded {}@{} ({} bytes)", name, version, bytes.len())));
+    pb.finish_with_message(pad_msg(&format!(
+        "✓ downloaded {}@{} ({} in {:.1}s)",
+        name,
+        version,
+        HumanBytes(bytes.len() as u64),
+        pb.elapsed().as_secs_f64()
+    )));
 
     let cache = cache_dir();
     fs::create_dir_all(&cache)?;
@@ -227,10 +238,7 @@ pub async fn build_from_source(
     url: &str,
     build_cmd: &str,
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
-    let dl_sty = ProgressStyle::default_bar()
-        .template("{spinner:.green} {wide_bar:.green} {msg}")
-        .unwrap()
-        .progress_chars("##-");
+    let dl_sty = bar_style();
 
     println!("→ downloading source {}@{} from {}", name, version, url);
     let response = client.get(url).header("user-agent", "fetcher").send().await?;
@@ -238,10 +246,13 @@ pub async fn build_from_source(
         return Err(format!("HTTP {} fetching source {}", response.status(), url).into());
     }
 
-    let total = response.content_length().unwrap_or(0);
-    let pb = ProgressBar::new(total);
+    let total = response.content_length();
+    let pb = match total {
+        Some(t) => ProgressBar::new(t),
+        None => ProgressBar::no_length(),
+    };
     pb.set_style(dl_sty);
-    pb.set_message(pad_msg(&format!("downloading source {}  0/{}", name, total)));
+    pb.set_message(pad_msg(&stats_line(0, total, 0.0)));
 
     let mut bytes = Vec::new();
     let mut stream = response.bytes_stream();
@@ -249,9 +260,15 @@ pub async fn build_from_source(
         let chunk = chunk?;
         bytes.extend_from_slice(&chunk);
         pb.inc(chunk.len() as u64);
-        pb.set_message(pad_msg(&format!("downloading source {}  {}/{}", name, bytes.len(), total)));
+        pb.set_message(pad_msg(&stats_line(pb.position(), total, pb.per_sec())));
     }
-    pb.finish_with_message(pad_msg(&format!("✓ downloaded source {} ({} bytes)", name, bytes.len())));
+    pb.finish_with_message(pad_msg(&format!(
+        "✓ downloaded source {}@{} ({} in {:.1}s)",
+        name,
+        version,
+        HumanBytes(bytes.len() as u64),
+        pb.elapsed().as_secs_f64()
+    )));
 
     let cache = cache_dir();
     fs::create_dir_all(&cache)?;

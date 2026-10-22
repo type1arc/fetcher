@@ -1,6 +1,6 @@
 use crate::arch::{native_arch, pacman_arch};
-use crate::repo::{AptRepo, PacmanRepo, ApkRepo};
-use crate::search::pad_msg;
+use crate::repo::{AptRepo, ApkRepo, PacmanRepo};
+use crate::ui::pad_msg;
 use flate2::read::GzDecoder;
 use indicatif::ProgressBar;
 use reqwest::Client;
@@ -20,7 +20,7 @@ pub async fn fetch_apt_index(client: &Client, repo: &AptRepo, pb: &ProgressBar) 
     let arch = native_arch();
     let mut results = Vec::new();
     for comp in &repo.components {
-        pb.set_message(pad_msg(&format!("checking apt: {}/{} [component: {}]", repo.uri, repo.suite, comp)));
+        pb.set_message(pad_msg(&format!("apt {}: {}/{}", comp, repo.uri, repo.suite)));
         let url = format!("{}/dists/{}/{}/binary-{}/Packages.gz", repo.uri, repo.suite, comp, arch);
         let data = match fetch_gz(client, &url).await { Ok(d) => d, Err(_) => { pb.inc(1); continue; } };
         let text = match String::from_utf8(data) { Ok(t) => t, Err(_) => { pb.inc(1); continue; } };
@@ -80,7 +80,7 @@ pub async fn fetch_pacman_index(client: &Client, repo: &PacmanRepo) -> Vec<(Stri
 pub async fn fetch_apk_index(client: &Client, repo: &ApkRepo, pb: &ProgressBar) -> Vec<(String, String, String)> {
     let arch = pacman_arch();
     let url = format!("{}/{}/APKINDEX.tar.gz", repo.uri.trim_end_matches('/'), arch);
-    pb.set_message(pad_msg(&format!("checking apk: {}", repo.uri)));
+    pb.set_message(pad_msg(&format!("apk: {}", repo.uri)));
     let data = match fetch_gz(client, &url).await { Ok(d) => d, Err(_) => { pb.inc(1); return Vec::new() } };
 
     let mut archive = tar::Archive::new(&data[..]);
